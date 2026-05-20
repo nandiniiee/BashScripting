@@ -24,10 +24,38 @@ DNS=$(whiptail --inputbox "Please enter your DNS Server" 10 40 3>&1 1>&2 2>&3)
 
 # validating ips using a fucntion
 validateIP(){
-	if [[ $1 =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]];then
-		return 0
-	else
+	local ip=$1
+	if [[ !$ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]];then
 		return 1
+	fi
+
+	#spilt ip and then check 
+	IFS='.' read -r o1 o2 o3 o4 <<< "$ip"
+
+	for octet in $o1 $o2 $o3 $o4 
+	do
+		if (( octet <0 || octet > 255 )); then
+			return 1
+		fi
+	done
+	return 0
+}
+
+# validate inteface
+validateInterface(){
+	if ip link show "$1" > /dev/null 2>&1; then
+		return 0
+	else 
+		return 1
+	fi
+}
+
+#validate CIDR
+validateCIDR(){
+	if [[ $1 =~ ^[0-9]+$ ]] && (( $1 >=0 && $1 <= 32 )); then
+	       return 0
+       else
+	       return 1
 	fi
 }
 
@@ -49,25 +77,31 @@ if ! validateIP "$DNS"; then
 	exit 1
 fi
 
+# validate CIDR
+if ! validateCIDR "$CIDR"; then
+       whiptail --msgbox "Invalid CIDR value" 10 40
+       exit 1
+fi
+
 # creating netplan configuration file
 cat <<EOF > /etc/netplan/01-static.yaml
 network:
- version: 2
- renderer: networkd
+  version: 2
+  renderer: networkd
 
- ethernets:
-  $INTERFACE:
-   dhcp: no
-   addresses: 
-    - $IP/$CIDR
+  ethernets:
+   $INTERFACE:
+    dhcp4: no
+    addresses: 
+      - $IP/$CIDR
 
-   routes:
-    - to: default
-    via: $GATEWAY
+    routes:
+      - to: default
+        via: $GATEWAY
 
-   nameservers:
-   addresses:
-    - $DNS
+    nameservers:
+     addresses:
+       - $DNS
 EOF
 
 # Applying netplan configuration
